@@ -16,7 +16,6 @@
     <OptimizationPreference>Speed</OptimizationPreference>
     <IlcGenerateMstatFile>true</IlcGenerateMstatFile>
     <IlcGenerateDgmlFile>true</IlcGenerateDgmlFile>
-    <IlcScanReflection>false</IlcScanReflection>
     <StackTraceSupport>false</StackTraceSupport>
   </PropertyGroup>
 

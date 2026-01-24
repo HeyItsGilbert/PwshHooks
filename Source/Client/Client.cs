@@ -19,6 +19,8 @@ static class Client
       Trace.Listeners.Add(new ConsoleTraceListener(useErrorStream: true));
     }
 
+    // Check if the named pipe client exists
+
     using var pipeClient = new NamedPipeClientStream(
       ".",
       pipeName,
@@ -26,19 +28,10 @@ static class Client
       PipeOptions.Asynchronous
     );
 
-    try
-    {
+    // TODO: Implement a command line option to end server at the end of invocation
 
-      // While we could use some pipe existence checks, they are platform-specific, and this should only incur a small "cold-start" penalty which is why we use Connect instead
-      // FIXME: There is a risk the server is unresponsive and we try to create a second listener here.
-      await pipeClient.ConnectAsync(500, cancellationToken);
-    }
-    catch (OperationCanceledException)
-    {
-      throw new OperationCanceledException("Connection to PowerServe was canceled");
-    }
-
-    if (!pipeClient.IsConnected)
+    // TODO: Implement a command line option to not automatically start a server but instead fail if not connected
+    if (!NamedPipeExists(pipeName))
     {
       Trace.TraceInformation($"PowerServe is not listening on pipe {pipeName}. Spawning new pwsh.exe PowerServe listener...");
 
@@ -64,6 +57,7 @@ static class Client
           "-Command", $"Import-Module $(Join-Path (Resolve-Path '{exeDir}') 'PowerServe.dll');Start-PowerServe -PipeName {pipeName}"
         }
       };
+
       Process process = new()
       {
         StartInfo = startInfo
@@ -72,23 +66,27 @@ static class Client
       try
       {
         process.Start();
-        // Shouldn't take more than 3 seconds to start up
-        await pipeClient.ConnectAsync(3000, cancellationToken);
       }
       catch (OperationCanceledException)
       {
         throw new OperationCanceledException("PowerServe startup was cancelled.");
       }
-      finally
-      {
-        if (!pipeClient.IsConnected)
-        {
-          // Cleanup the process if running
-          Trace.TraceInformation($"PowerServe did not successfully start listening on {pipeName}. Attempting to kill the process.");
-          // Let these exceptions bubble up
-          process.Kill();
-        }
-      }
+
+      Trace.TraceInformation($"Started PowerServe listener with PID {process.Id}.");
+    }
+
+    try
+    {
+      // TODO: Make timeout configurable via command line option
+      await pipeClient.ConnectAsync(3000, cancellationToken);
+    }
+    catch (OperationCanceledException)
+    {
+      throw new OperationCanceledException("Connection to PowerServe was canceled");
+    }
+    catch (TimeoutException)
+    {
+      throw new TimeoutException($"PowerServe connection failed to pipe {pipeName}.");
     }
 
     if (!pipeClient.IsConnected)
@@ -152,7 +150,7 @@ static class Client
           Console.Error.WriteLine($"VERBOSE: {message}");
           continue;
         case "I":
-          Console.WriteLine($"INFO: {message}");
+          Console.Error.WriteLine($"INFO: {message}");
           continue;
         case "W":
           Console.Error.WriteLine($"WARNING: {message}");
@@ -169,6 +167,24 @@ static class Client
     {
       throw new InvalidOperationException("Connection closed unexpectedly before receiving <<END>>.");
     }
+  }
+
+  /// <summary>
+  /// Check if a named pipe exists in a cross-platform manner. Reimplementation of a private .NET core method.
+  /// </summary>
+  public static bool NamedPipeExists(string pipeName)
+  {
+    if (Path.IsPathFullyQualified(pipeName))
+    {
+      string directory = Path.GetDirectoryName(pipeName) ?? throw new InvalidOperationException("IsPathFullyQualified was true but GetDirectoryName returned null. This is a bug and should not happen.");
+      string fileName = Path.GetFileName(pipeName);
+      return Directory.GetFiles(directory, fileName).Length > 0;
+    }
+
+    return Directory.GetFiles(
+      OperatingSystem.IsWindows() ? @"\\.\pipe\" : Path.GetTempPath(),
+      OperatingSystem.IsWindows() ? pipeName : $"CoreFxPipe_{pipeName}"
+    ).Length > 0;
   }
 
   [DllImport("kernel32.dll", SetLastError = true)]

@@ -20,6 +20,22 @@
         "resolved": "2.0.2",
         "contentHash": "zqn6I1IULEJaLEFKejeSFlZrf8HzIUU4qEjuYtEVRx5AsxKMLqLP+t0dQ4fk51A5CzT9Uv8wBLdMHSIYIrCKBw=="
       }
+    },
+    "net8.0/win-x64": {
+      "Microsoft.DotNet.ILCompiler": {
+        "type": "Direct",
+        "requested": "[8.0.23, )",
+        "resolved": "8.0.23",
+        "contentHash": "sZ+2paRWqc7J2GWWCV5iOF0A9XDrBzR+xBsN1jqMwKGud7ElpHgljmikA9ORejQRZ8Iu3mmzGRWQ7M76pHH2XQ==",
+        "dependencies": {
+          "runtime.win-x64.Microsoft.DotNet.ILCompiler": "8.0.23"
+        }
+      },
+      "runtime.win-x64.Microsoft.DotNet.ILCompiler": {
+        "type": "Transitive",
+        "resolved": "8.0.23",
+        "contentHash": "zxj+3lNwFb/jQqsiZICtvtv3JxKAgYsahdSq8R7rYHs5cGdhNYNANb5tcnPRMk9wZUNEz7RDceZYWP93hHTMNg=="
+      }
     }
   }
 }
