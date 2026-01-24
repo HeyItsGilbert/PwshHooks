@@ -89,7 +89,7 @@ public class PowerShellTarget
     catch (RuntimeException ex)
     {
       _ = Console.Error.WriteLineAsync($"Script Error: {ex}");
-      await writeClient($"SCRIPT ERROR: {ex.InnerException} {ex.InnerException.StackTrace}");
+      await writeClient($"SCRIPT ERROR: {ex.InnerException} {ex.InnerException?.StackTrace}");
     }
     catch (Exception ex)
     {

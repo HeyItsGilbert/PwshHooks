@@ -6,20 +6,22 @@
     <Authors>Justin Grote</Authors>
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>latest</LangVersion>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <PropertyGroup Label="AOT">
     <InvariantGlobalization>true</InvariantGlobalization>
     <PublishAot>true</PublishAot>
     <OptimizationPreference>Speed</OptimizationPreference>
-    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    <DebugType>portable</DebugType>
-    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <GenerateDependencyFile>false</GenerateDependencyFile>
     <IlcGenerateMstatFile>true</IlcGenerateMstatFile>
     <IlcGenerateDgmlFile>true</IlcGenerateDgmlFile>
+    <IlcScanReflection>false</IlcScanReflection>
+    <StackTraceSupport>false</StackTraceSupport>
   </PropertyGroup>
+
   <ItemGroup>
-    <PackageReference Include="System.CommandLine" Version="2.0.0-beta1.20071.2" />
+    <PackageReference Include="System.CommandLine" />
     <Compile Include="../Shared/StreamString.cs" />
   </ItemGroup>
 

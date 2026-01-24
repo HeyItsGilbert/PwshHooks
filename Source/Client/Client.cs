@@ -4,7 +4,8 @@ using System.Runtime.InteropServices;
 
 using PowerServe.Shared;
 
-namespace PowerServe;
+namespace PowerServe.Client;
+
 static class Client
 {
   /// <summary>

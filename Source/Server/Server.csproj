@@ -4,20 +4,17 @@
     <AssemblyName>PowerServe</AssemblyName>
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>latest</LangVersion>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <DebugType>portable</DebugType>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <GenerateDependencyFile>false</GenerateDependencyFile>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.PowerShell.Commands.Utility" Version="7.4.0" />
-    <PackageReference Include="System.Management.Automation" Version="7.4.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.PowerShell.Commands.Utility" />
+    <PackageReference Include="System.Management.Automation" PrivateAssets="all" />
     <Compile Include="../Shared/StreamString.cs" />
   </ItemGroup>
 
   <Target Name="CopyToBuildFolder" AfterTargets="Publish">
-    <Copy SourceFiles="$(OutputPath)\publish\PowerServe.dll" DestinationFolder="../../Build" />
+    <Copy SourceFiles="$(OutDir)\PowerServe.dll" DestinationFolder="../../Build" />
   </Target>
 </Project>

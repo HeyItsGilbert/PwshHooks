@@ -1,43 +1,76 @@
 using System.CommandLine;
-using System.CommandLine.Invocation;
-using System.Diagnostics; // added for Trace and ConsoleTraceListener
+using System.CommandLine.Parsing;
+using System.Diagnostics;
 
-using static PowerServe.Client;
+using PowerServe.Client; // added for Trace and ConsoleTraceListener
 
-// Write Trace to stderr
+using static PowerServe.Client.Client;
 
-using var cts = new CancellationTokenSource();
-Console.CancelKeyPress += (sender, eventArgs) =>
+try
 {
-  eventArgs.Cancel = true;
-  cts.Cancel();
-};
+  // Write all trace output to console
+  Trace.Listeners.Add(new ConsoleTraceListener(true));
 
-var rootCommand = new RootCommand
-{
-  new Option<string>(["--script", "-c"], "The PowerShell script to execute."),
-  new Option<string>(["--file", "-f"], "The path to the PowerShell script file to execute."),
-  new Option<string>(["--working-directory", "-w"], () => Directory.GetCurrentDirectory(), "Specify the working directory for the PowerShell process. Defaults to the current directory."),
-  new Option<string>(["--pipe-name", "-p"], () => $"PowerServe-{Environment.UserName}", "The named pipe to use. The server will start here if not already running. Defaults to PowerServe-{username}."),
-  new Option<bool>(["--verbose", "-v"], "Log verbose messages about what PowerServeClient is doing to stderr. This may interfere with the JSON response so only use for troubleshooting."),
-  new Option<int>(["--depth", "-d"], () => 2, "The maximum depth for JSON serialization of PowerShell objects. Defaults to 2"),
-  new Option<string>(["--exeDir", "-e"], "Where to locate the PowerServe module.") {IsHidden = true}
-};
+  // Cancel any operations on Ctrl+C
+  using CancellationTokenSource cts = new();
+  Console.CancelKeyPress += (sender, eventArgs) =>
+  {
+    eventArgs.Cancel = true;
+    cts.Cancel();
+  };
 
-rootCommand.Handler = CommandHandler.Create<string, string, string, string, bool, int, string>((script, file, workingDirectory, pipeName, verbose, depth, exeDir) =>
-{
-  string resolvedScript = !string.IsNullOrEmpty(file) ? $"& (Resolve-Path {file})" : script;
-  return InvokeScript(
+  //HACK: Needed for validators until https://github.com/dotnet/command-line-api/issues/2766 is resolved
+  Options.Initialize();
+
+  RootCommand rootCommand = new("PowerServe Client - Execute PowerShell scripts via a persistent PowerShell server.")
+  {
+    Options.File,
+    Options.Script,
+    Options.WorkingDirectory,
+    Options.PipeName,
+    Options.Verbose,
+    Options.Depth,
+    Options.ExeDir
+  };
+
+  ParseResult options = rootCommand.Parse(args);
+
+  if (options.Errors.Count > 0)
+  {
+    foreach (ParseError error in options.Errors)
+    {
+      string subject = error.SymbolResult?.ToString() ?? "unknown";
+      Console.Error.WriteLine($"Error while parsing '{subject}': {error.Message}");
+    }
+    throw new ArgumentException(string.Empty);
+  }
+
+  string? script = options.GetValue(Options.Script);
+  FileInfo? file = options.GetValue(Options.File);
+  string resolvedScript = file != null ? $"& (Resolve-Path {file.FullName})" : script!;
+
+  await InvokeScript(
     script: resolvedScript,
-    pipeName,
-    workingDirectory,
-    verbose,
+    pipeName: options.GetValue(Options.PipeName) ?? throw new ArgumentException("Pipe name cannot be null"),
+    workingDirectory: options.GetValue(Options.WorkingDirectory)?.FullName,
+    verbose: options.GetValue(Options.Verbose),
     cts.Token,
-    exeDir,
-    depth
+    options.GetValue(Options.ExeDir)?.FullName,
+    options.GetValue(Options.Depth)
   );
-});
+}
+catch (Exception ex)
+{
+  if (!string.IsNullOrEmpty(ex.Message))
+  {
+    Console.Error.WriteLine($"ERROR: {ex.Message}");
+  }
+  return (int)ExitCodeMapper.GetExitCode(ex);
+}
+finally
+{
+  Trace.Flush();
+}
 
-await rootCommand.InvokeAsync(args);
-
-Trace.Flush();
+// Default result if no exceptions occured
+return (int)ExitCode.Success;
