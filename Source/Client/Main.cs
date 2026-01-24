@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.CommandLine.Parsing;
 using System.Diagnostics;
 
 using PowerServe.Client; // added for Trace and ConsoleTraceListener
@@ -8,9 +7,6 @@ using static PowerServe.Client.Client;
 
 try
 {
-  // Write all trace output to console
-  Trace.Listeners.Add(new ConsoleTraceListener(true));
-
   // Cancel any operations on Ctrl+C
   using CancellationTokenSource cts = new();
   Console.CancelKeyPress += (sender, eventArgs) =>
@@ -33,37 +29,33 @@ try
     Options.ExeDir
   };
 
-  ParseResult options = rootCommand.Parse(args);
-
-  if (options.Errors.Count > 0)
+  rootCommand.SetAction(async (parseResult, cancellationToken) =>
   {
-    foreach (ParseError error in options.Errors)
-    {
-      string subject = error.SymbolResult?.ToString() ?? "unknown";
-      Console.Error.WriteLine($"Error while parsing '{subject}': {error.Message}");
-    }
-    throw new ArgumentException(string.Empty);
-  }
+    string? script = parseResult.GetValue(Options.Script);
+    FileInfo? file = parseResult.GetValue(Options.File);
+    string resolvedScript = file != null ? $"& (Resolve-Path {file.FullName})" : script!;
 
-  string? script = options.GetValue(Options.Script);
-  FileInfo? file = options.GetValue(Options.File);
-  string resolvedScript = file != null ? $"& (Resolve-Path {file.FullName})" : script!;
+    await InvokeScript(
+      script: resolvedScript,
+      pipeName: parseResult.GetValue(Options.PipeName) ?? throw new ArgumentException("Pipe name cannot be null"),
+      workingDirectory: parseResult.GetValue(Options.WorkingDirectory)?.FullName,
+      verbose: parseResult.GetValue(Options.Verbose),
+      cts.Token,
+      parseResult.GetValue(Options.ExeDir)?.FullName,
+      parseResult.GetValue(Options.Depth)
+    );
+  });
 
-  await InvokeScript(
-    script: resolvedScript,
-    pipeName: options.GetValue(Options.PipeName) ?? throw new ArgumentException("Pipe name cannot be null"),
-    workingDirectory: options.GetValue(Options.WorkingDirectory)?.FullName,
-    verbose: options.GetValue(Options.Verbose),
-    cts.Token,
-    options.GetValue(Options.ExeDir)?.FullName,
-    options.GetValue(Options.Depth)
-  );
+  ParseResult parseResult = rootCommand.Parse(args);
+
+  // This is our program entrypoint which invokes the script if there are no parsing errors.
+  return await parseResult.InvokeAsync();
 }
 catch (Exception ex)
 {
   if (!string.IsNullOrEmpty(ex.Message))
   {
-    Console.Error.WriteLine($"ERROR: {ex.Message}");
+    Console.Error.WriteLine($"ERROR {ex.GetType().Name}: {ex.Message}");
   }
   return (int)ExitCodeMapper.GetExitCode(ex);
 }
@@ -71,6 +63,3 @@ finally
 {
   Trace.Flush();
 }
-
-// Default result if no exceptions occured
-return (int)ExitCode.Success;
