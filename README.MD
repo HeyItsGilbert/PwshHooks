@@ -30,6 +30,10 @@ PowerClient.exe is a .NET 8 AOT-optimized native executable that takes a script 
 1. It will take the results, serialized them to a single-lined JSON, and then return it to the client via the named pipe which in turn outputs that via stdout.
 1. If a single string is returned from the script, it is passed through (removing any newlines). This is done in the case the script has already done the JSON serialization or wants to return an alternate output.
 
+## Design Decisions
+
+1. Using MessagePack or JSON-RPC as a communications channel seems like a natural fit, but all libraries for both of these have a lot of dependencies that might conflict with something you are trying to run, and I didn't want to deal with setting up an ALC for all that nonsense, so I just created a simple length-delimited format with a single character to indicate the output stream, this requires zero dependencies and keeps the design clean.
+
 ## Debugging
 
 You can alternatively for debugging purposes start a pwsh.exe process and then run:
