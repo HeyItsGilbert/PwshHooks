@@ -8,7 +8,7 @@
       "name": "PowerServe: Server",
       "type": "PowerShell",
       "request": "launch",
-      "script": "Import-Module ./Source/Server/bin/Debug/net8.0/PowerServe.dll;Start-PowerServe;sleep 300",
+      "script": "Import-Module ${workspaceFolder}/artifacts/bin/Server/debug/PowerServe.dll;Start-PowerServe;sleep 300",
       "createTemporaryIntegratedConsole": true,
       "attachDotnetDebugger": true,
       "preLaunchTask": "Build Server",
@@ -17,11 +17,12 @@
       "name": "Client: Hello World",
       "type": "coreclr",
       "request": "launch",
-      "program": "${workspaceFolder}/Source/Client/bin/Debug/net9.0/PowerServeClient.dll",
+      "program": "${workspaceFolder}/artifacts/bin/Client/debug/PowerServeClient.dll",
       "preLaunchTask": "Build Client",
       "args": [
         "-c",
-        "'Hello World'"
+        "'Hello World'",
+        "--verbose"
       ],
       "cwd": "${workspaceFolder}",
       "stopAtEntry": false,
