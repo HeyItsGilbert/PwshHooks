@@ -1,7 +1,7 @@
 using System.Collections;
 using System.Text;
 
-namespace PowerServe.Shared;
+namespace PwshHooks.Shared;
 
 /// <summary>
 /// Provides methods for efficiently reading and writing strings to a stream with a length prefix.

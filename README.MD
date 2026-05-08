@@ -1,53 +1,113 @@
-# PowerServe
+# PwshHooks
 
-Run pwsh scripts repeatedly in a high performance manner and get JSONified results.
+A performance-optimized runtime for PowerShell-based [Claude Code hooks](https://code.claude.com/docs/en/hooks). Instead of spawning a new `pwsh.exe` process for every hook invocation, PwshHooks keeps a persistent PowerShell server alive for the duration of a Claude Code session and routes hook calls through it via named pipes.
 
-## Quick Start
+## How It Works
 
-Download the release and extract into a folder.
+`PwshHooksClient.exe` is a .NET 8 AOT-compiled native executable. On each hook invocation it:
 
-`PowerServeClient.exe "MyScript"`
+1. Reads the Claude Code event JSON from stdin
+2. Derives the pipe name from the `session_id` in that payload
+3. Connects to the session's PwshHooks server (starts one if not running)
+4. Forwards the event JSON and the hook script to the server
+5. Streams the JSON response back to stdout for Claude Code to consume
 
-Note: This will spawn a background pwsh.exe process. To end that process when finished, use the following command:
-`get-process pwsh | where commandline -match 'Start-PowerServe' | stop-process`
+The server is a persistent `pwsh.exe` process hosting a runspace pool. It stays alive across all hook calls for the session and is shut down by the `SessionEnd` hook.
 
-To see more options, run `PowerServeClient.exe --help`
+## Requirements
 
-However it is purposefully meant to be persistent to "cache" the startup and runspace pools for better efficiency, so you would generally only do this for troubleshooting and testing.
+- PowerShell 7+
+- [ClaudeHooks](https://github.com/justingrote/ClaudeHooks) module installed (`Install-Module ClaudeHooks`)
 
-## Purpose
+## Setup
 
-This is primarily targeted at monitoring programs such as PRTG that execute pwsh.exe dozens if not hundreds of times a minute, in an effort to reduce the memory and overhead of all those separate processes. It also has a good use for other programming languages being able to call into PWSH and get a JSON result quickly and simply.
+### 1. Install
 
-## Architecture
+Download the latest release and extract `PwshHooksClient.exe` and `PwshHooks.dll` to a permanent location, e.g. `~/.claude/PwshHooks/`.
 
-PowerClient.exe is a .NET 8 AOT-optimized native executable that takes a script argument and then:
+### 2. Write a hook script
 
-1. Attempts to connect to the PowerServe server via a named pipe
-1. If the server is not running, start a pwsh.exe process and inject the PowerServe server into it, loading it as a module and opening the named pipe for the server.
-1. Encode the script in base64 and send it as a single line to the server via the named pipe
-1. Server takes the script, decodes it, and executes it in a runspace pool
-1. It will take the results, serialized them to a single-lined JSON, and then return it to the client via the named pipe which in turn outputs that via stdout.
-1. If a single string is returned from the script, it is passed through (removing any newlines). This is done in the case the script has already done the JSON serialization or wants to return an alternate output.
+Hook scripts import `ClaudeHooks` and use `Read-ClaudeHookInput` to access the event. The event JSON is injected automatically — no stdin plumbing needed.
 
-## Design Decisions
+```powershell
+# ~/.claude/hooks/block-rm-rf.ps1
+Import-Module ClaudeHooks
 
-1. Using MessagePack or JSON-RPC as a communications channel seems like a natural fit, but all libraries for both of these have a lot of dependencies that might conflict with something you are trying to run, and I didn't want to deal with setting up an ALC for all that nonsense, so I just created a simple length-delimited format with a single character to indicate the output stream, this requires zero dependencies and keeps the design clean.
+$hook = Read-ClaudeHookInput -Quiet
+if (-not $hook) { exit 0 }
 
-## Debugging
+$base = Get-ClaudeBashBaseCommand $hook.tool_input.command
+if ($base -eq 'rm' -and $hook.tool_input.command -match '-rf?') {
+    Write-ClaudeHookDeny -Reason 'rm -rf is not allowed.'
+}
+exit 0
+```
 
-You can alternatively for debugging purposes start a pwsh.exe process and then run:
-`import-module path/to/powerserve.dll;Start-PowerServe -PipeName PowerServe-USERNAME`
+### 3. Register hooks in `~/.claude/settings.json`
 
-Replacing USERNAME with your current username. If you do this then you will be able to see the logs for the normally backgrounded process. The client will then attach to this server.
+Replace `<install-dir>` with the path where you extracted the binaries.
 
-## Roadmap
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<install-dir>/PwshHooksClient.exe --forward-stdin -c \"& ~/.claude/hooks/block-rm-rf.ps1\""
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<install-dir>/PwshHooksClient.exe --forward-stdin --shutdown"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
-* Controlling number of threads
-* "Script Affinity" which will attempt to re-run the same script in the same runspace and minimize memory usage and startup time
+The `SessionEnd` entry is important — it shuts down the session's server process cleanly when Claude Code exits.
 
-## Limitations / Known Issues
+You can also use `Add-ClaudeHookConfig` from the ClaudeHooks module to register hooks without editing JSON by hand.
 
-* Only error and output streams are considered, warning/progress/verbose/debug output is discarded
-* Sometimes gets frozen on serialization due to a large default depth size, be sure to be very narrow in the objects you return. `PSCustomObject and Select-Object are your friends`.
-* Environment variables are currently not passed through from the PowerServeClient.exe call to the backend pwsh process, it is recommended instead you provide the environment variables as parameters to your script.
+## CLI Reference
+
+```
+PwshHooksClient.exe [options]
+
+Options:
+  -c, --script <script>            PowerShell script string to execute
+  -f, --file <file>                Path to a PowerShell script file to execute
+  -i, --forward-stdin              Read stdin and inject it as $global:ClaudeHookInput
+  -x, --shutdown                   Shut down the session server and exit
+  -p, --pipe-name <name>           Override the pipe name (default: PwshHooks-<username>,
+                                   or PwshHooks-<session_id> when --forward-stdin is active)
+  -d, --depth <n>                  JSON serialization depth (default: 2)
+  -w, --working-directory <dir>    Working directory for spawning the server
+  -e, --exeDir <dir>               Directory containing PwshHooks.dll
+  -v, --verbose                    Log diagnostic output to stderr
+```
+
+## Development
+
+See [TESTING.md](TESTING.md) for build instructions, manual end-to-end test commands, and how to update the ClaudeHooks module during development.
+
+## Shoutout
+
+This project is built on top of [PowerServe](https://github.com/justingrote/PowerServe) by [Justin Grote](https://github.com/justingrote). The persistent server architecture, runspace pooling, named pipe protocol, and AOT client are all his work — PwshHooks would not exist without it.
+
+## Limitations
+
+- Only the Output and Error streams are returned to Claude Code. Warning, Verbose, Debug, and Progress output is discarded.
+- JSON serialization can hang on deeply nested objects. Return `PSCustomObject` or `Select-Object`-projected values; keep the default `--depth 2`.
+- Environment variables are not forwarded from the client to the server process. Pass values as script parameters instead.

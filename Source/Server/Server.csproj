@@ -1,7 +1,7 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" Sdk="Microsoft.NET.Sdk">
   <Target Name="Default"></Target>
   <PropertyGroup>
-    <AssemblyName>PowerServe</AssemblyName>
+    <AssemblyName>PwshHooks</AssemblyName>
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -15,6 +15,6 @@
   </ItemGroup>
 
   <Target Name="CopyToBuildFolder" AfterTargets="Publish">
-    <Copy SourceFiles="$(OutDir)\PowerServe.dll" DestinationFolder="../../Build" />
+    <Copy SourceFiles="$(OutDir)\PwshHooks.dll" DestinationFolder="../../Build" />
   </Target>
 </Project>

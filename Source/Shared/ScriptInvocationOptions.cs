@@ -1,4 +1,4 @@
-namespace PowerServe.Shared;
+namespace PwshHooks.Shared;
 
 /// <summary>
 /// A dictionary that can be serialized to a string format.

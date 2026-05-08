@@ -1,12 +1,13 @@
 using System.IO.Pipes;
 using System.Management.Automation;
 using System.Management.Automation.Runspaces;
+using System.Text;
 
 using Microsoft.PowerShell.Commands;
 
-using PowerServe.Shared;
+using PwshHooks.Shared;
 
-namespace PowerServe;
+namespace PwshHooks;
 
 public class PowerShellTarget
 {
@@ -74,6 +75,7 @@ public class PowerShellTarget
           InformationRecord ir => $"I:{ir}",
           WarningRecord wr => $"W:{wr}",
           ErrorRecord er => $"E:{er}",
+          string s => $"O:{s}",
           _ => "O:" + JsonObject.ConvertToJson(item, in context)
         };
 
@@ -114,7 +116,7 @@ public class Server
   {
     if (string.IsNullOrWhiteSpace(pipeName))
     {
-      pipeName = "PowerServe-" + Environment.UserName;
+      pipeName = "PwshHooks-" + Environment.UserName;
     }
     Dictionary<Type, int> retryExceptions = [];
     NamedPipeServerStream? pipeServer = CreatePipe(pipeName);
@@ -192,10 +194,47 @@ public class Server
     string inFromClient = await reader.ReadAsync();
 
     _ = Console.Out.WriteLineAsync("IN: " + inFromClient);
-    // We accept from client either a depth and script or just a script. ex. 0 AAAFFESERS
-    var parts = inFromClient.Split(' ', 2);
-    int depth = 5; // default depth value
-    string script = parts.Length == 2 && int.TryParse(parts[0], out depth) ? parts[1] : inFromClient;
+
+    if (inFromClient == "<<SHUTDOWN>>")
+    {
+      _ = Console.Out.WriteLineAsync("Shutdown requested by client.");
+      await writer.WriteAsync("<<END>>");
+      CancellationTokenSource.Cancel();
+      return;
+    }
+
+    // Protocol variants (space-delimited, script is always last):
+    //   "{script}"                          — no depth, no stdin
+    //   "{depth} {script}"                  — depth prefix
+    //   "{depth} {stdinBase64} {script}"    — depth + forwarded stdin
+    var parts = inFromClient.Split(' ', 3);
+    int depth = 5;
+    string? stdinContent = null;
+    string script;
+
+    if (parts.Length == 3 && int.TryParse(parts[0], out depth))
+    {
+      stdinContent = Encoding.UTF8.GetString(Convert.FromBase64String(parts[1]));
+      script = parts[2];
+    }
+    else if (parts.Length >= 2 && int.TryParse(parts[0], out depth))
+    {
+      script = parts[1];
+    }
+    else
+    {
+      depth = 5;
+      script = inFromClient;
+    }
+
+    if (stdinContent != null)
+    {
+      // Inject into global scope so module-defined functions (e.g. Read-ClaudeHookInput) can
+      // read it. Each runspace has its own global scope, so there is no cross-contamination
+      // between concurrent invocations. Base64 avoids any PS string-escaping concerns.
+      string b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(stdinContent));
+      script = $"$global:ClaudeHookInput = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{b64}'))\n{script}";
+    }
 
     using CancellationTokenSource runScriptCts = new();
     try

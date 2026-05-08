@@ -1,10 +1,10 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
 
-namespace PowerServe.Client;
+namespace PwshHooks.Client;
 
 /// <summary>
-/// Holds the command line options for the PowerServe client in a
+/// Holds the command line options for the PwshHooks client in a
 /// </summary>
 public static class Options
 {
@@ -20,19 +20,19 @@ public static class Options
 
 	public static readonly Option<DirectoryInfo> WorkingDirectory = new("--working-directory", "-w")
 	{
-		Description = "The working directory to use when spawning the PowerServe server",
+		Description = "The working directory to use when spawning the PwshHooks server",
 		DefaultValueFactory = x => new DirectoryInfo(Environment.CurrentDirectory)
 	};
 
 	public static readonly Option<string> PipeName = new("--pipe-name", "-p")
 	{
 		Description = "The named pipe to use. The server will start here if not already running",
-		DefaultValueFactory = x => $"PowerServe-{Environment.UserName}"
+		DefaultValueFactory = x => $"PwshHooks-{Environment.UserName}"
 	};
 
 	public static readonly Option<bool> Verbose = new("--verbose", "-v")
 	{
-		Description = "Log verbose messages about what PowerServeClient is doing to stderr. This may interfere with the JSON response so only use for troubleshooting"
+		Description = "Log verbose messages about what PwshHooksClient is doing to stderr. This may interfere with the JSON response so only use for troubleshooting"
 	};
 
 	public static readonly Option<int> Depth = new("--depth", "-d")
@@ -43,8 +43,18 @@ public static class Options
 
 	public static readonly Option<DirectoryInfo> ExeDir = new("--exeDir", "-e")
 	{
-		Description = "The directory to use to find pwsh.exe when spawning the PowerServe server if needed. Defaults to the directory of the current executable",
+		Description = "The directory to use to find pwsh.exe when spawning the PwshHooks server if needed. Defaults to the directory of the current executable",
 		DefaultValueFactory = x => new DirectoryInfo(Environment.CurrentDirectory)
+	};
+
+	public static readonly Option<bool> ForwardStdin = new("--forward-stdin", "-i")
+	{
+		Description = "Read stdin and make it available as $ClaudeHookInput in the script. Use when invoking Claude Code hooks that receive event JSON on stdin."
+	};
+
+	public static readonly Option<bool> Shutdown = new("--shutdown", "-x")
+	{
+		Description = "Send a shutdown signal to the PwshHooks server on the target pipe and exit. Used by SessionEnd hooks to clean up the session server. Skips auto-start if no server is running."
 	};
 
 	// Setup validators for the options

@@ -1,17 +1,19 @@
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Text.Json;
 
-using PowerServe.Shared;
+using PwshHooks.Shared;
 
-namespace PowerServe.Client;
+namespace PwshHooks.Client;
 
 static class Client
 {
   /// <summary>
   /// An invocation of the client. We connect, send the script, and receive the response in JSONLines format.
   /// </summary>
-  public static async Task InvokeScript(string script, string pipeName, string? workingDirectory, bool verbose, CancellationToken cancellationToken, string? exeDir, int depth)
+  public static async Task InvokeScript(string script, string pipeName, string? workingDirectory, bool verbose, CancellationToken cancellationToken, string? exeDir, int depth, string? stdinContent = null)
   {
     if (verbose)
     {
@@ -33,7 +35,7 @@ static class Client
     // TODO: Implement a command line option to not automatically start a server but instead fail if not connected
     if (!NamedPipeExists(pipeName))
     {
-      Trace.TraceInformation($"PowerServe is not listening on pipe {pipeName}. Spawning new pwsh.exe PowerServe listener...");
+      Trace.TraceInformation($"PwshHooks is not listening on pipe {pipeName}. Spawning new pwsh.exe PwshHooks listener...");
 
       if (string.IsNullOrWhiteSpace(exeDir))
       {
@@ -54,7 +56,7 @@ static class Client
           "-NoProfile",
           "-NoExit",
           "-NonInteractive",
-          "-Command", $"Import-Module $(Join-Path (Resolve-Path '{exeDir}') 'PowerServe.dll');Start-PowerServe -PipeName {pipeName}"
+          "-Command", $"Import-Module $(Join-Path (Resolve-Path '{exeDir}') 'PwshHooks.dll');Start-PwshHooks -PipeName {pipeName}"
         }
       };
 
@@ -69,10 +71,10 @@ static class Client
       }
       catch (OperationCanceledException)
       {
-        throw new OperationCanceledException("PowerServe startup was cancelled.");
+        throw new OperationCanceledException("PwshHooks startup was cancelled.");
       }
 
-      Trace.TraceInformation($"Started PowerServe listener with PID {process.Id}.");
+      Trace.TraceInformation($"Started PwshHooks listener with PID {process.Id}.");
     }
 
     try
@@ -82,19 +84,19 @@ static class Client
     }
     catch (OperationCanceledException)
     {
-      throw new OperationCanceledException("Connection to PowerServe was canceled");
+      throw new OperationCanceledException("Connection to PwshHooks was canceled");
     }
     catch (TimeoutException)
     {
-      throw new TimeoutException($"PowerServe connection failed to pipe {pipeName}.");
+      throw new TimeoutException($"PwshHooks connection failed to pipe {pipeName}.");
     }
 
     if (!pipeClient.IsConnected)
     {
-      throw new InvalidOperationException($"Failed to connect to PowerServe on pipe {pipeName}.");
+      throw new InvalidOperationException($"Failed to connect to PwshHooks on pipe {pipeName}.");
     }
 
-    Trace.TraceInformation($"Connected to PowerServe on Pipe {pipeName}.");
+    Trace.TraceInformation($"Connected to PwshHooks on Pipe {pipeName}.");
 
     Trace.TraceInformation($"Script contents: {script}");
 
@@ -108,10 +110,14 @@ static class Client
         writer.Write("<<CANCEL>>");
       });
 
-    // Send the script to the server
-    string stringWithDepth = $"{depth} {script}";
-    Trace.TraceInformation($"Writing to Server: {stringWithDepth}");
-    int writtenBytes = await writer.WriteAsync(stringWithDepth, cancellationToken);
+    // Send the script to the server. When stdin content is present, encode it as base64 and
+    // include it as the second field so the server can inject $ClaudeHookInput into the script.
+    // Protocol: "{depth} {script}" or "{depth} {stdinBase64} {script}"
+    string payload = stdinContent != null
+      ? $"{depth} {Convert.ToBase64String(Encoding.UTF8.GetBytes(stdinContent))} {script}"
+      : $"{depth} {script}";
+    Trace.TraceInformation($"Writing to Server: {payload}");
+    int writtenBytes = await writer.WriteAsync(payload, cancellationToken);
     Trace.TraceInformation($"Wrote {writtenBytes} bytes to server.");
 
     string? response;
@@ -185,6 +191,61 @@ static class Client
       OperatingSystem.IsWindows() ? @"\\.\pipe\" : Path.GetTempPath(),
       OperatingSystem.IsWindows() ? pipeName : $"CoreFxPipe_{pipeName}"
     ).Length > 0;
+  }
+
+  /// <summary>
+  /// Connects to a running PwshHooks server and sends a shutdown signal, then waits for
+  /// acknowledgement. If no server is listening on the pipe, returns without error.
+  /// </summary>
+  public static async Task ShutdownServer(string pipeName, bool verbose, CancellationToken cancellationToken)
+  {
+    if (verbose)
+      Trace.Listeners.Add(new ConsoleTraceListener(useErrorStream: true));
+
+    if (!NamedPipeExists(pipeName))
+    {
+      Trace.TraceInformation($"No PwshHooks server on pipe {pipeName}. Nothing to shut down.");
+      return;
+    }
+
+    using var pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+
+    try
+    {
+      await pipeClient.ConnectAsync(3000, cancellationToken);
+    }
+    catch (TimeoutException)
+    {
+      throw new TimeoutException($"PwshHooks connection timed out on pipe {pipeName}.");
+    }
+
+    StreamString writer = new(pipeClient);
+    StreamString reader = new(pipeClient);
+
+    await writer.WriteAsync("<<SHUTDOWN>>", cancellationToken);
+
+    // Drain until <<END>> so the server finishes its cleanup before we exit.
+    string? response;
+    while ((response = reader.Read()) is not null && response != "<<END>>") { }
+
+    Trace.TraceInformation($"PwshHooks server on {pipeName} shut down.");
+  }
+
+  /// <summary>
+  /// Extracts the session_id field from a Claude Code hook event JSON payload.
+  /// Returns null if the field is absent or the input is not valid JSON.
+  /// Uses JsonDocument (no reflection) so it is safe in AOT builds.
+  /// </summary>
+  public static string? ParseSessionId(string json)
+  {
+    try
+    {
+      using JsonDocument doc = JsonDocument.Parse(json);
+      if (doc.RootElement.TryGetProperty("session_id", out JsonElement el))
+        return el.GetString();
+    }
+    catch { }
+    return null;
   }
 
   [DllImport("kernel32.dll", SetLastError = true)]

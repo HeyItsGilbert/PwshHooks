@@ -1,4 +1,4 @@
-namespace PowerServe.Client;
+namespace PwshHooks.Client;
 
 public enum ExitCode
 {

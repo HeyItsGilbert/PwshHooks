@@ -2,7 +2,7 @@
   <Target Name="Default"></Target>
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <AssemblyName>PowerServeClient</AssemblyName>
+    <AssemblyName>PwshHooksClient</AssemblyName>
     <Authors>Justin Grote</Authors>
     <TargetFramework>net8.0</TargetFramework>
     <LangVersion>latest</LangVersion>
@@ -25,6 +25,6 @@
   </ItemGroup>
 
   <Target Name="CopyToBuildFolder" AfterTargets="Publish">
-    <Copy SourceFiles="$(OutputPath)\native\PowerServeClient.exe" DestinationFolder="../../Build" />
+    <Copy SourceFiles="$(OutputPath)\native\PwshHooksClient.exe" DestinationFolder="../../Build" />
   </Target>
 </Project>

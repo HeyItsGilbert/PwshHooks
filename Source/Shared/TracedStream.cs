@@ -1,5 +1,5 @@
 using System.Diagnostics;
-namespace PowerServe;
+namespace PwshHooks;
 
 public class TracedStreamReader(Stream stream) : StreamReader(stream, leaveOpen: true)
 {

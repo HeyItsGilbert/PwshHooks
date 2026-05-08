@@ -1,12 +1,12 @@
 using System.Management.Automation;
 
-namespace PowerServe;
+namespace PwshHooks;
 
-[Cmdlet(VerbsLifecycle.Start, "PowerServe")]
-public class StartPowerServeCmdlet : PSCmdlet
+[Cmdlet(VerbsLifecycle.Start, "PwshHooks")]
+public class StartPwshHooksCmdlet : PSCmdlet
 {
   [Parameter(Position = 0)]
-  public string PipeName { get; set; } = "PowerServe-" + Environment.UserName;
+  public string PipeName { get; set; } = "PwshHooks-" + Environment.UserName;
 
   // Runs in the background for the life of the module
   protected override void ProcessRecord() => _ = new Server().StartAsync(PipeName!);
