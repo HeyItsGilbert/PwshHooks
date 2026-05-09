@@ -62,25 +62,39 @@ public class PowerShellTarget
 
     JsonObject.ConvertToJsonContext context = new(depth, true, true);
 
-    // Since the collection is blocking, this should stream appropriately and in order until completed
+    // Buffer O: (script output) items so the entire payload can be validated against the
+    // Claude Hooks output schema before being forwarded. Other streams (E/W/V/D/I) pass
+    // through live so progress and errors are not delayed.
+    List<string> outputPayloads = [];
+
     Task outputTask = Task.Run(async () =>
     {
       foreach (var item in outputCollection)
       {
-        // Stringify and format the resuilts so the client knows how to handle them
-        string result = item.BaseObject switch
+        switch (item.BaseObject)
         {
-          DebugRecord dr => $"D:{dr}",
-          VerboseRecord vr => $"V:{vr}",
-          InformationRecord ir => $"I:{ir}",
-          WarningRecord wr => $"W:{wr}",
-          ErrorRecord er => $"E:{er}",
-          string s => $"O:{s}",
-          _ => "O:" + JsonObject.ConvertToJson(item, in context)
-        };
-
-        _ = Console.Error.WriteLineAsync($"Item Output: {result}");
-        await writeClient(result);
+          case DebugRecord dr:
+            await writeClient($"D:{dr}");
+            break;
+          case VerboseRecord vr:
+            await writeClient($"V:{vr}");
+            break;
+          case InformationRecord ir:
+            await writeClient($"I:{ir}");
+            break;
+          case WarningRecord wr:
+            await writeClient($"W:{wr}");
+            break;
+          case ErrorRecord er:
+            await writeClient($"E:{er}");
+            break;
+          case string s:
+            outputPayloads.Add(s);
+            break;
+          default:
+            outputPayloads.Add(JsonObject.ConvertToJson(item, in context));
+            break;
+        }
       }
     });
 
@@ -101,6 +115,24 @@ public class PowerShellTarget
     // PowerShell doesn't auto-close the collection, we must do it manually. This will unblock the outputTask after it finishes all the items in the collection.
     outputCollection.Complete();
     await outputTask;
+
+    if (outputPayloads.Count > 1)
+    {
+      await writeClient($"E:hook emitted {outputPayloads.Count} output objects, expected exactly one JSON object matching the Claude Hooks output schema");
+      return;
+    }
+
+    if (outputPayloads.Count == 1)
+    {
+      string payload = outputPayloads[0];
+      string? error = HookOutputValidator.Validate(payload);
+      if (error is not null)
+      {
+        await writeClient($"E:invalid hook output: {error}");
+        return;
+      }
+      await writeClient($"O:{payload}");
+    }
   }
 }
 
