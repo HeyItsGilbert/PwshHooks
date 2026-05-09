@@ -89,7 +89,12 @@ public class PowerShellTarget
             await writeClient($"E:{er}");
             break;
           case string s:
-            outputPayloads.Add(s);
+            // Whitespace-only string output is a Claude Hooks no-op; don't let it count
+            // toward the multi-output error or get forwarded as a non-JSON O: payload.
+            if (!string.IsNullOrWhiteSpace(s))
+            {
+              outputPayloads.Add(s);
+            }
             break;
           default:
             outputPayloads.Add(JsonObject.ConvertToJson(item, in context));
